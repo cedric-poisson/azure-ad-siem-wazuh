@@ -1,0 +1,30 @@
+---
+- name: Préparer la DC pour AD DS
+  hosts: dc
+  gather_facts: false
+
+  roles:
+    - ad_dc_prep
+    - ad_domain_create
+    - ad_ou_gpo
+
+- name: Faire rejoindre le client au domaine
+  hosts: clients
+  gather_facts: false
+
+  roles:
+    - client_join
+
+- name: Installer et configurer le manager Wazuh
+  hosts: wazuh
+  gather_facts: false
+
+  roles:
+    - wazuh_manager
+
+- name: Déployer l'agent Wazuh sur la DC et le client
+  hosts: dc,clients
+  gather_facts: false
+
+  roles:
+    - wazuh_agent

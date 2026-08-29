@@ -1,0 +1,26 @@
+# Terraform / OpenTofu
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+crash.log
+crash.*.log
+.terraform.lock.hcl
+
+# Ansible
+*.retry
+ansible/inventory/hosts
+ansible/inventory/hosts.ini
+*.pem
+*.ppk
+
+# Secrets divers
+*.env
+.env
+secrets.yml
+vault_pass.txt
+
+# Editeur / OS
+.vscode/
+.DS_Store

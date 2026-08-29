@@ -1,0 +1,21 @@
+ad_domain_name: "lab.local"
+
+ad_ous:
+  - name: "Direction"
+    path: "DC=lab,DC=local"
+  - name: "Commercial"
+    path: "DC=lab,DC=local"
+  - name: "Ordinateurs"
+    path: "DC=lab,DC=local"
+  - name: "Serveurs"
+    path: "DC=lab,DC=local"
+
+ad_gpos:
+  - name: "GPO-Restriction-USB"
+  - name: "GPO-Ecran-Verrouillage"
+
+ad_gpo_links:
+  - gpo: "GPO-Restriction-USB"
+    ou_path: "OU=Ordinateurs,DC=lab,DC=local"
+  - gpo: "GPO-Ecran-Verrouillage"
+    ou_path: "OU=Direction,DC=lab,DC=local"

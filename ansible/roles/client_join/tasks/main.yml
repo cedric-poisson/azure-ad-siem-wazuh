@@ -1,0 +1,13 @@
+---
+- name: Rejoindre le domaine Active Directory
+  microsoft.ad.membership:
+    dns_domain_name: "{{ ad_domain_name }}"
+    domain_admin_user: "{{ ad_join_user }}"
+    domain_admin_password: "{{ ad_join_password }}"
+    state: domain
+  register: join_result
+
+- name: Redémarrer le client si nécessaire
+  ansible.windows.win_reboot:
+    reboot_timeout: 900
+  when: join_result.reboot_required

@@ -1,0 +1,3 @@
+ad_domain_name: "lab.local"
+ad_join_user: "azureadmin@lab.local"
+ad_join_password: "{{ vault_ad_join_password }}"

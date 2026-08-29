@@ -1,0 +1,11 @@
+---
+- name: Créer la forêt Active Directory
+  microsoft.ad.domain:
+    dns_domain_name: "{{ ad_domain_name }}"
+    safe_mode_password: "{{ ad_safe_mode_password }}"
+  register: domain_create
+
+- name: Redémarrer la VM si nécessaire
+  ansible.windows.win_reboot:
+    reboot_timeout: 900
+  when: domain_create.reboot_required

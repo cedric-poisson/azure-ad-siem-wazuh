@@ -1,0 +1,37 @@
+---
+- name: Installer les dépendances système
+  ansible.builtin.apt:
+    name:
+      - curl
+      - apt-transport-https
+      - gnupg2
+    state: present
+    update_cache: true
+
+- name: Vérifier que Wazuh est installé (bootstrap Terraform déjà passé)
+  ansible.builtin.stat:
+    path: /var/ossec/bin/wazuh-control
+  register: wazuh_installed
+
+- name: Échouer proprement si Wazuh n'est pas installé
+  ansible.builtin.fail:
+    msg: "Wazuh non détecté sur la VM - vérifier l'exécution de wazuh_bootstrap.sh"
+  when: not wazuh_installed.stat.exists
+
+- name: Extraire le mot de passe admin généré à l'installation
+  ansible.builtin.shell: >
+    tar -O -xf /root/wazuh-install-files.tar
+    wazuh-install-files/wazuh-passwords.txt
+    | grep -A1 "'admin'"
+    | grep 'Password'
+    | awk '{print $NF}'
+  register: wazuh_admin_password
+  changed_when: false
+  no_log: true
+
+- name: Afficher un rappel de sécurité
+  ansible.builtin.debug:
+    msg: >
+      Mot de passe admin Wazuh récupéré - à copier immédiatement dans
+      group_vars/wazuh/vault.yml (ansible-vault edit), puis à supprimer
+      de /root/wazuh-install-files.tar et de l'historique shell.

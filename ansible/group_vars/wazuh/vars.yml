@@ -1,0 +1,6 @@
+---
+wazuh_manager_ip: "10.0.1.5"       # IP privée fixée dans vm_wazuh.tf
+wazuh_manager_port: 1514            # port syslog/agent
+wazuh_enrollment_port: 1515         # port enrollment
+wazuh_api_port: 55000
+wazuh_dashboard_port: 443
