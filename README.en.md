@@ -3,62 +3,114 @@
   <a href="README.en.md">🇬🇧 English</a>
 </p>
 
-# Azure AD Lab — IaC Deployment of an Active Directory Infrastructure
+# Azure AD + SIEM Wazuh Lab — Monitored Active Directory Infrastructure, in IaC
 
-Personal demo project: fully automated provisioning and configuration of an Active Directory infrastructure on Azure, using **OpenTofu** (infra) and **Ansible** (configuration).
+Personal demo project: fully automated provisioning and configuration of an Active Directory infrastructure on Azure, using **OpenTofu** (infra) and **Ansible** (configuration) — monitored by a **Wazuh SIEM** for security incident detection.
 
-Goal: start from scratch and end up with a working Active Directory domain — forest, domain controller, organizational units, group policies, and a client machine joined to the domain — with zero manual steps.
+Goal: start from scratch and end up with a working Active Directory domain — forest, domain controller, organizational units, group policies, domain-joined client machine — then wire in a SIEM able to collect and alert on real security events (authentication failures, sensitive file changes, etc.), with no manual steps.
+
+This project builds on [azure-ad-lab](https://github.com/cedric-poisson/azure-ad-lab), reusing its entire AD foundation.
 
 ## Architecture
 
 ```
 Azure (Sweden Central)
-└── rg-ad-lab
-    ├── Network: VNet (10.0.0.0/16), subnet (10.0.1.0/24), NSG restricted to a single allowed IP
+└── rg-ad-wazuh-lab
+    ├── Network: VNet (10.0.0.0/16), subnet (10.0.1.0/24), NSG restricted to one allowed IP
     ├── vm-dc      : Windows Server 2022 — domain controller (lab.local)
-    ├── vm-client  : Windows 11 Pro — domain-joined workstation
-    └── Storage account: hosts the WinRM bootstrap script
+    ├── vm-client  : Windows 11 Pro — domain-joined client
+    ├── vm-wazuh   : Ubuntu 22.04 — Wazuh manager + indexer + dashboard (all-in-one)
+    └── Storage account: hosts the bootstrap scripts
 ```
 
 **Stack**:
-- **OpenTofu** — Azure infrastructure provisioning (network, VMs, WinRM bootstrap)
-- **Ansible** (`microsoft.ad`, `ansible.windows`) — AD forest creation, DC promotion, OUs, GPOs, domain join
+- **OpenTofu** — Azure infrastructure provisioning (network, VMs, bootstrap)
+- **Ansible** (`microsoft.ad`, `ansible.windows`, `community.windows`) — AD forest creation, DC promotion, OUs, GPOs, domain join, Wazuh deployment
+- **Wazuh** (manager, indexer, dashboard) — log collection, anomaly detection, MITRE ATT&CK mapping
 - **Ansible Vault** — encrypted secrets (DSRM password, domain-join credentials)
 
 ## Repo structure
 
 ```
 terraform/
-├── main.tf              # Azure provider, resource group
-├── network.tf           # VNet, subnet, NSG
-├── vm_dc.tf              # Domain controller VM + WinRM bootstrap
-├── vm_client.tf          # Client VM + WinRM bootstrap
-├── storage.tf            # Storage account hosting the bootstrap script
-├── winrm_bootstrap.ps1   # Script enabling WinRM/HTTPS on first boot
+├── main.tf                # Azure provider, resource group
+├── network.tf             # VNet, subnet, NSG
+├── vm_dc.tf                # Domain controller VM + WinRM bootstrap
+├── vm_client.tf            # Client VM + WinRM bootstrap
+├── vm_wazuh.tf              # Wazuh manager VM
+├── storage.tf              # Storage account hosting the bootstrap scripts
+├── winrm_bootstrap.ps1     # WinRM/HTTPS activation script on first boot
+├── wazuh_bootstrap.sh      # All-in-one Wazuh install script on first boot
 └── variables.tf / outputs.tf / terraform.tfvars (not versioned)
 
 ansible/
-├── inventory/hosts.ini   # Inventory (not versioned, contains credentials)
+├── inventory/hosts.ini     # Inventory (not versioned, contains credentials)
 ├── group_vars/
-│   ├── dc/               # Variables + vault-encrypted secrets (AD forest, DSRM password)
-│   └── clients/          # Variables + vault-encrypted secrets (domain join)
+│   ├── all.yml             # Variables shared across all hosts (Wazuh manager private IP)
+│   ├── dc/                 # Variables + vaulted secrets (AD forest, DSRM password)
+│   ├── clients/             # Variables + vaulted secrets (domain join)
+│   └── wazuh/               # Non-sensitive variables (ports, manager IP)
 ├── roles/
-│   ├── ad_dc_prep/        # AD-Domain-Services and DNS feature installation
-│   ├── ad_domain_create/  # Forest creation + DC promotion
-│   ├── ad_ou_gpo/         # Organizational units + group policies
-│   └── client_join/       # Client workstation domain join
-└── site.yml               # Main playbook
+│   ├── ad_dc_prep/          # AD-Domain-Services and DNS feature installation
+│   ├── ad_domain_create/    # Forest creation + DC promotion
+│   ├── ad_ou_gpo/           # Organizational units + group policies
+│   ├── client_join/         # DNS configuration + client machine domain join
+│   ├── wazuh_manager/       # Wazuh manager installation and verification
+│   └── wazuh_agent/         # Agent deployment on the DC and the client
+└── site.yml                 # Main playbook
 ```
 
 ## What it deploys
 
 - An Active Directory forest (`lab.local`) on a Windows Server 2022 domain controller
 - 4 organizational units: `Direction`, `Commercial`, `Ordinateurs`, `Serveurs`
-- 2 group policies (USB restriction, screen lock), linked to their respective OUs
-- A Windows 11 workstation joined to the domain, with DNS pointing to the domain controller
+- 2 group policies (USB restriction, screen lock), linked to the corresponding OUs
+- A domain-joined Windows 11 client
+- A Wazuh manager monitoring the DC and the client (agents installed and active, Windows security log collection)
 
-## Notes
+## Validation tests performed
 
-- No explicit AD functional level was set at forest creation (defaults to `Windows2016Domain`) — no impact for this lab, but worth fixing if the infra were recreated.
-- GPO creation relies on raw PowerShell via `win_shell`, as there's no mature official Ansible module for this task yet — OU management, on the other hand, uses the native `microsoft.ad.ou` module.
-- Infrastructure is destroyed between work sessions (`tofu destroy`) to keep costs under control.
+- ✅ Wazuh agent enrollment (DC + client) with the manager — "Active" status confirmed
+- ✅ Detection of a simulated authentication failure (RDP attempt with wrong password) — alert raised and classified (MITRE ATT&CK T1531, Wazuh rule 60122, level 5), visible in the dashboard
+- ⏳ FIM (File Integrity Monitoring) — functional but detection is delayed: the default monitored folders on Windows hosts have no real-time scan (`realtime`), so detection depends on the next periodic scan cycle
+
+## Prerequisites to deploy this lab
+
+This repo is public but deliberately incomplete: secrets and environment-specific configuration (Azure credentials, AD passwords, Wazuh dashboard admin password) are never versioned. To deploy this lab from a clone, you need to recreate locally:
+
+**On the Terraform side** — a `terraform/terraform.tfvars` file (not provided), with at least:
+```hcl
+admin_username = "azureadmin"
+admin_password = "..."
+my_ip           = "x.x.x.x/32"
+```
+
+**On the Ansible side** — an inventory file `ansible/inventory/hosts.ini` (not provided) referencing the public IPs generated by Terraform (`tofu output`), with one group per role (`dc`, `clients`, `wazuh`), and a vault password (freely chosen when creating the project's first vaulted file):
+```bash
+cd ansible/
+ansible-vault create group_vars/dc/vault.yml
+# then define: ad_safe_mode_password: "..."
+ansible-vault create group_vars/clients/vault.yml
+# then define: vault_ad_join_password: "..."
+```
+The same vault password unlocks every `group_vars/*/vault.yml` file in the repo.
+
+**Wazuh admin password** — randomly generated at install time (not versioned, regenerated on every redeploy since the infra is destroyed between sessions). Retrievable after deployment via:
+```bash
+ssh azureadmin@<wazuh-vm-public-ip>
+sudo tar -O -xf /root/wazuh-install-files.tar wazuh-install-files/wazuh-passwords.txt | grep -A1 "'admin'" | grep 'indexer_password'
+```
+
+**Azure authentication** — this project assumes a service principal is already configured (environment variables `ARM_CLIENT_ID`, `ARM_CLIENT_SECRET`, `ARM_SUBSCRIPTION_ID`, `ARM_TENANT_ID`), not versioned for the same reasons.
+
+Without these, `tofu apply` and `ansible-playbook site.yml` will fail cleanly by requesting the missing values — this is the expected behavior.
+
+## Notes / lessons learned
+
+- **Azure quota (student subscription)**: `standardDSv3Family` capped at 4 vCPUs in `swedencentral` — the Wazuh VM was switched to `Standard_B2s_v2` (a separate quota family) to free up headroom for the Windows VMs.
+- **DNS and boot ordering**: pointing a client's DNS at the domain controller *right at creation time* (at the Terraform level, via `dns_servers` on the NIC) breaks public name resolution as long as the DC has no working DNS service yet (installed by Ansible, afterwards) — the bootstrap extension then fails to download its script. Fix: default DNS at creation time (Terraform), switching to the DC only right before the domain join (a dedicated Ansible task in `client_join`).
+- **`CustomScript` extension (Linux) vs `CustomScriptExtension` (Windows)**: unlike its Windows counterpart, the Linux extension does not accept a `scriptHash` property in its `settings` block — it strictly validates the expected JSON schema.
+- **`become` and PowerShell**: Ansible's `become` mechanism (sudo) is incompatible with a WinRM connection — never enable it globally in a mixed Linux/Windows play, only on plays targeting Linux hosts.
+- **Group variables and scope**: a variable needed by several different host groups (e.g. the Wazuh manager IP, used both by the `wazuh_agent` role on `dc`/`clients` and by the manager's own configuration) must be defined in `group_vars/all.yml`, not in a specific group's `group_vars` — Ansible only loads variables from the group(s) a host belongs to.
+- **Idempotent reinstall and configuration**: `win_package` does not re-run install arguments (including the Wazuh manager address) if the package is already present — changing this value requires a dedicated task to update the configuration (`ossec.conf`) followed by a service restart, rather than relying on a reinstall.
+- Infrastructure is destroyed between working sessions (`tofu destroy`) to control costs — this means regenerating the inventory (`hosts.ini`) and the Wazuh admin password on every new deployment.
