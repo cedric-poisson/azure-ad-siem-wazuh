@@ -1,0 +1,36 @@
+---
+- name: Télécharger le package MSI de l'agent Wazuh
+  ansible.windows.win_get_url:
+    url: "https://packages.wazuh.com/4.x/windows/wazuh-agent-4.9.0-1.msi"
+    dest: "C:\\Windows\\Temp\\wazuh-agent.msi"
+
+- name: Installer l'agent Wazuh avec enrollment automatique
+  ansible.windows.win_package:
+    path: "C:\\Windows\\Temp\\wazuh-agent.msi"
+    arguments:
+      - "/q"
+      - "WAZUH_MANAGER={{ wazuh_manager_ip }}"
+      - "WAZUH_REGISTRATION_SERVER={{ wazuh_manager_ip }}"
+    state: present
+  register: wazuh_agent_install
+
+- name: Mettre à jour l'adresse du manager dans la config de l'agent
+  community.windows.win_lineinfile:
+    path: "C:\\Program Files (x86)\\ossec-agent\\ossec.conf"
+    regexp: '<address>.*</address>'
+    line: "    <address>{{ wazuh_manager_ip }}</address>"
+
+- name: Redémarrer le service Wazuh Agent pour appliquer la nouvelle config
+  ansible.windows.win_service:
+    name: WazuhSvc
+    state: restarted  
+
+- name: Démarrer le service Wazuh Agent
+  ansible.windows.win_service:
+    name: WazuhSvc
+    state: started
+    start_mode: auto
+
+- name: Afficher le résultat de l'installation
+  ansible.builtin.debug:
+    msg: "Agent Wazuh installé sur {{ inventory_hostname }} : {{ wazuh_agent_install.changed }}"

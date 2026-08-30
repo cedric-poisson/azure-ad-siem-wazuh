@@ -11,7 +11,7 @@ resource "azurerm_network_interface" "client_nic" {
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
 
-   dns_servers = ["10.0.1.4"]
+   
 
   ip_configuration {
     name                          = "internal"
@@ -46,6 +46,7 @@ resource "azurerm_windows_virtual_machine" "client" {
     version   = "latest"
   }
 }
+
 
 resource "azurerm_virtual_machine_extension" "client_winrm" {
   name                       = "winrm-bootstrap"

@@ -23,8 +23,8 @@
     tar -O -xf /root/wazuh-install-files.tar
     wazuh-install-files/wazuh-passwords.txt
     | grep -A1 "'admin'"
-    | grep 'Password'
-    | awk '{print $NF}'
+    | grep 'indexer_password'
+    | awk -F"'" '{print $2}'
   register: wazuh_admin_password
   changed_when: false
   no_log: true

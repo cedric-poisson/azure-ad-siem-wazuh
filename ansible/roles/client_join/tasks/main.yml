@@ -1,4 +1,11 @@
 ---
+
+- name: Configurer le DNS du client vers le contrôleur de domaine
+  ansible.windows.win_dns_client:
+    adapter_names: "*"
+    dns_servers:
+      - "10.0.1.4"
+
 - name: Rejoindre le domaine Active Directory
   microsoft.ad.membership:
     dns_domain_name: "{{ ad_domain_name }}"
